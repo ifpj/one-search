@@ -105,10 +105,7 @@ func (p *HTTPProvider) newJSONRequest(ctx context.Context, method, endpoint stri
 }
 
 func (p *HTTPProvider) newGETRequest(ctx context.Context, endpoint string, params url.Values) (*http.Request, error) {
-	requestURL := p.baseURL + endpoint
-	if len(params) > 0 {
-		requestURL += "?" + params.Encode()
-	}
+	requestURL := p.buildRequestURL(endpoint, params)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, err
@@ -118,6 +115,50 @@ func (p *HTTPProvider) newGETRequest(ctx context.Context, endpoint string, param
 		request.Header.Set("User-Agent", p.userAgent)
 	}
 	return request, nil
+}
+
+// buildRequestURL constructs the final request URL. When the baseURL contains a
+// query string (e.g. reverse-proxy URLs like "https://proxy.example.com?p=https://api.target.com/v1"),
+// the target URL is extracted, combined with the endpoint and parameters, then
+// re-encoded as the proxy parameter value.
+func (p *HTTPProvider) buildRequestURL(endpoint string, params url.Values) string {
+	if !strings.Contains(p.baseURL, "?") {
+		requestURL := p.baseURL + endpoint
+		if len(params) > 0 {
+			requestURL += "?" + params.Encode()
+		}
+		return requestURL
+	}
+	// Reverse-proxy mode: baseURL has "?key=targetURL"
+	parsed, err := url.Parse(p.baseURL)
+	if err != nil {
+		return p.baseURL + endpoint + "?" + params.Encode()
+	}
+	proxyPrefix := ""
+	targetRaw := ""
+	for key, values := range parsed.Query() {
+		if len(values) > 0 && (strings.HasPrefix(values[0], "http://") || strings.HasPrefix(values[0], "https://")) {
+			proxyPrefix = p.baseURL[:strings.Index(p.baseURL, "?")+1] + key + "="
+			targetRaw = values[0]
+			break
+		}
+	}
+	if proxyPrefix == "" {
+		requestURL := p.baseURL + endpoint
+		if len(params) > 0 {
+			requestURL += "&" + params.Encode()
+		}
+		return requestURL
+	}
+	target := strings.TrimRight(targetRaw, "/") + endpoint
+	if len(params) > 0 {
+		sep := "?"
+		if strings.Contains(target, "?") {
+			sep = "&"
+		}
+		target += sep + params.Encode()
+	}
+	return proxyPrefix + url.QueryEscape(target)
 }
 
 func (p *HTTPProvider) decodeResponse(response *http.Response) (map[string]interface{}, error) {
