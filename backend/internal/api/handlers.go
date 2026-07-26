@@ -557,6 +557,7 @@ func (h *Handler) createKey(w http.ResponseWriter, r *http.Request) {
 		ProviderName   string `json:"provider_name"`
 		Alias          string `json:"alias"`
 		Key            string `json:"key"`
+		Keys           string `json:"keys"`
 		ExaAPIKeyID    string `json:"exa_api_key_id"`
 		ExaServiceKey  string `json:"exa_service_key"`
 		Weight         int    `json:"weight"`
@@ -573,13 +574,44 @@ func (h *Handler) createKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Exa x-api-key is required")
 		return
 	}
-	key, err := h.store.CreateProviderKey(r.Context(), req.ProviderName, req.Alias, req.Key, req.ExaAPIKeyID, req.ExaServiceKey, req.Weight, req.RPMLimit, req.DailyQuota, req.MonthlyQuota, req.MaxConcurrency)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	// Collect key values: prefer multi-line "keys" field, fall back to single "key"
+	var keyValues []string
+	if trimmed := strings.TrimSpace(req.Keys); trimmed != "" {
+		for _, line := range strings.Split(trimmed, "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				keyValues = append(keyValues, line)
+			}
+		}
+	}
+	if len(keyValues) == 0 && strings.TrimSpace(req.Key) != "" {
+		keyValues = []string{strings.TrimSpace(req.Key)}
+	}
+	if len(keyValues) == 0 {
+		writeError(w, http.StatusBadRequest, "key is required")
 		return
 	}
-	h.audit(r, "admin", "provider_key.create", "provider_key", strconv.FormatInt(key.ID, 10), map[string]interface{}{"provider": key.ProviderName, "alias": key.Alias})
-	writeJSON(w, http.StatusCreated, key)
+	var created []model.ProviderKeyView
+	for i, kv := range keyValues {
+		alias := req.Alias
+		if alias == "" {
+			alias = fmt.Sprintf("%s-%d", req.ProviderName, time.Now().UnixMilli()+int64(i))
+		} else if len(keyValues) > 1 {
+			alias = fmt.Sprintf("%s-%d", alias, i+1)
+		}
+		key, err := h.store.CreateProviderKey(r.Context(), req.ProviderName, alias, kv, req.ExaAPIKeyID, req.ExaServiceKey, req.Weight, req.RPMLimit, req.DailyQuota, req.MonthlyQuota, req.MaxConcurrency)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create key %d/%d: %s", i+1, len(keyValues), err.Error()))
+			return
+		}
+		h.audit(r, "admin", "provider_key.create", "provider_key", strconv.FormatInt(key.ID, 10), map[string]interface{}{"provider": key.ProviderName, "alias": key.Alias})
+		created = append(created, key)
+	}
+	if len(created) == 1 {
+		writeJSON(w, http.StatusCreated, created[0])
+	} else {
+		writeJSON(w, http.StatusCreated, map[string]interface{}{"keys": created, "count": len(created)})
+	}
 }
 
 func (h *Handler) updateKey(w http.ResponseWriter, r *http.Request) {

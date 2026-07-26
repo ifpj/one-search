@@ -114,7 +114,7 @@
                   <div v-for="row in tableKeys" :key="row.isNew ? 'new-key' : row.id" class="api-key-row" :class="{ 'is-new': row.isNew }">
                     <template v-if="row.isNew">
                       <div class="new-key-fields">
-                        <el-input v-model="draftKey" class="key-input" type="password" show-password placeholder="API Key" />
+                        <el-input v-model="draftKey" class="key-input" type="textarea" :rows="3" :autosize="{ minRows: 1, maxRows: 8 }" placeholder="API Key，每行一个" />
                         <el-input
                           v-if="providerForm?.name === 'exa'"
                           v-model="draftExaServiceKey"
@@ -644,7 +644,7 @@ async function createKey() {
   if (providerForm.value.name === 'exa' && !draftExaServiceKey.value.trim()) { ElMessage.warning('请填写 Exa x-api-key'); return }
   creatingKey.value = true
   try {
-    await api.createKey({ provider_name: providerForm.value.name, alias: `${providerForm.value.name}-${Date.now()}`, key: draftKey.value.trim(), exa_service_key: draftExaServiceKey.value.trim(), weight: 1, rpm_limit: 0, daily_quota: 0, monthly_quota: 0 })
+    await api.createKey({ provider_name: providerForm.value.name, alias: `${providerForm.value.name}-${Date.now()}`, keys: draftKey.value.trim(), exa_service_key: draftExaServiceKey.value.trim(), weight: 1, rpm_limit: 0, daily_quota: 0, monthly_quota: 0 })
     ElMessage.success('密钥已添加')
     cancelCreateKey()
     await load()
