@@ -1,8 +1,6 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/ifpj/one-search:latest
     environment:
       APP_ENV: ${APP_ENV:-production}
       POSTGRES_DB: ${POSTGRES_DB:-one_search}
